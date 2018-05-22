@@ -16,9 +16,12 @@
 
 package com.esri.apl.slpkissue;
 
-import android.net.Uri;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Environment;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 
@@ -26,6 +29,7 @@ import com.esri.arcgisruntime.ArcGISRuntimeException;
 import com.esri.arcgisruntime.geometry.Envelope;
 import com.esri.arcgisruntime.geometry.GeometryEngine;
 import com.esri.arcgisruntime.geometry.Point;
+import com.esri.arcgisruntime.geometry.PointBuilder;
 import com.esri.arcgisruntime.layers.ArcGISSceneLayer;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISScene;
@@ -36,6 +40,8 @@ import java.io.File;
 
 public class MainActivity extends AppCompatActivity {
   private static final String TAG = "SceneLayer";
+  private static final int REQ_READ_FILES = 1;
+
   private SceneView mSceneView;
 
   @Override
@@ -43,6 +49,10 @@ public class MainActivity extends AppCompatActivity {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
 
+    checkFileReadPermissions();
+  }
+
+  private void loadSceneLayerPackage() {
     // create a scene and add a basemap to it
     final ArcGISScene scene = new ArcGISScene();
 //    scene.setBasemap(Basemap.createImagery());
@@ -58,8 +68,8 @@ public class MainActivity extends AppCompatActivity {
 //    String sFile = "cp_Pro_3Dobj_Global_Portland_symbo.slpk";
     File fLyrPkg = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
         sFile);
-    String sLyrPkg = fLyrPkg.getPath();
-    String uriLyrPkg = Uri.fromFile(fLyrPkg).toString();
+    String sLyrPkg = fLyrPkg.getAbsolutePath();
+
 
     final ArcGISSceneLayer sceneLayer = new ArcGISSceneLayer(sLyrPkg);
     sceneLayer.loadAsync();
@@ -70,12 +80,12 @@ public class MainActivity extends AppCompatActivity {
           Log.d(TAG, "Layer loaded");
           scene.getOperationalLayers().add(sceneLayer);
           Envelope env = sceneLayer.getFullExtent();
-          Point ptCenter = (Point) GeometryEngine.project(
-              env.getCenter(), mSceneView.getSpatialReference());
+          PointBuilder pb = new PointBuilder((Point) GeometryEngine.project(
+                  env.getCenter(), mSceneView.getSpatialReference()));
+          pb.setZ(1000);
+          Point ptCenter = pb.toGeometry();
           // add a camera and initial camera position
-          Camera camera = new Camera(ptCenter.getX(), ptCenter.getY(), 350,0, 0, 0);
-//          Camera camera = new Camera(37.7605, -119.5615, 4800, 270, 65, 0);
-//          Camera camera = new Camera(48.378, -4.494, 200, 345, 65, 0);
+          Camera camera = new Camera(ptCenter, 0, 0, 0);
           mSceneView.setViewpointCamera(camera);
         } else {
           ArcGISRuntimeException exc = sceneLayer.getLoadError();
@@ -86,27 +96,60 @@ public class MainActivity extends AppCompatActivity {
         }
       }
     });
+  }
 
+  /**
+   * Determine if we're able to read files
+   */
+  private void checkFileReadPermissions() {
+    // Explicitly check for privilege
+    final int permissionCheck = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE);
+    if (permissionCheck == PackageManager.PERMISSION_GRANTED) {
+      Log.d("MainActivity", "Read files permission granted");
+      loadSceneLayerPackage();
+    } else {
+      Log.d("MainActivity", "Read files permission not granted, asking...");
+      ActivityCompat.requestPermissions(this,
+              new String[] { Manifest.permission.READ_EXTERNAL_STORAGE },
+              REQ_READ_FILES);
+    }
+  }
+  @Override
+  public void onRequestPermissionsResult(int requestCode,
+                                         String[] permissions, int[] grantResults) {
+    switch (requestCode) {
+      case REQ_READ_FILES: {
+        // If request is cancelled, the result arrays are empty.
+        if (grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+          Log.d("MainActivity", "Read files permission granted...");
+          loadSceneLayerPackage();
+        } else {
+          Log.d("MainActivity", "Read files permission denied...");
+        }
+        return;
+      }
+    }
   }
 
   @Override
   protected void onPause() {
     super.onPause();
     // pause SceneView
-    mSceneView.pause();
+    if (mSceneView != null) mSceneView.pause();
   }
 
   @Override
   protected void onResume() {
     super.onResume();
     // resume SceneView
-    mSceneView.resume();
+    if (mSceneView != null) mSceneView.resume();
   }
 
   @Override
   protected void onDestroy() {
     super.onDestroy();
     // dispose SceneView
-    mSceneView.dispose();
+    if (mSceneView != null) mSceneView.dispose();
   }
 }
